@@ -207,13 +207,11 @@ class ARBPulse(DiscreteWaveform):
         """
         Initializes the PUNDPulse class.
         
-        :param reset_amp: amplitude of reset pulse, polarity is polarity of P and u pulses x(-1) (in Volts)
-        :param reset_width: width of reset pulse (in s)
-        :param reset_delay: delay between reset pulse and p pulse (in s)
-        :param p_u_amp: amplitude of p and u pulses, polarity is polarity of P and u pulses x(-1) (in Volts)
-        :param p_u_width: width of p and u pulses (in s)
-        :param p_u_delay: delay between p pulse and u pulse (in s)
-        :param offset: Offset of the PUND waveform (in Volts)
+        :param pulse_width: the width of each pulse (in s)
+        :param pulse_height: the heigh of each pulse (in Volts)
+        :param pulse_delay: the delay between each pulse (in s)
+        :param num_pulses: the number of times the pulse should be repeated
+        :param pulse_sequence: a list of coefficents to create an arbitrary pulse train to be repeated with parameters above
         """
         super().__init__(awg, osc, v_div, voltage_channel)
 
@@ -222,7 +220,7 @@ class ARBPulse(DiscreteWaveform):
         self.pulse_delay = pulse_delay
         self.num_pulses = num_pulses
         self.pulse_sequence = pulse_sequence
-        #TODO: Add self.length
+        self.length = ((pulse_width+pulse_delay)*(len(pulse_sequence))*num_pulses)
         self.metadata = pd.DataFrame(locals(), index=[0])
         del self.metadata['self']
         self.metadata['type'] = self.type
@@ -241,12 +239,12 @@ class ARBPulse(DiscreteWaveform):
 
         n_points = self.awg.arb_wf_points_range[1]
 
-        dense_v = interpolate_sparse_to_dense(sum_times, amplitudes, total_points=n_points)
+        dense_v = interpolate_sparse_to_dense(sum_times, amplitude, total_points=n_points)
         
         # write to awg
         self.awg.create_arb_wf(dense_v)
         self.awg.configure_wf(self.voltage_channel, 'VOLATILE', voltage=f'{abs(amplitude)}', frequency=f'{1/self.length}')
-        print("AWG configured for a PUND pulse.")
+        print("AWG configured for a ARB Pulse.")
 
 
 
