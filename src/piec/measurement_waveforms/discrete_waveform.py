@@ -240,7 +240,10 @@ class ARBPulse(DiscreteWaveform):
         n_points = self.awg.arb_wf_points_range[1]
 
         dense_v = interpolate_sparse_to_dense(sum_times, amplitude, total_points=n_points)
-        
+
+        print(dense_v)
+        plt.plot(dense_v[0], dense_v[10])
+        plt.show
         # write to awg
         self.awg.create_arb_wf(dense_v)
         self.awg.configure_wf(self.voltage_channel, 'VOLATILE', voltage=f'{abs(amplitude)}', frequency=f'{1/self.length}')
