@@ -5,7 +5,7 @@ from scipy.integrate import cumulative_trapezoid
 from scipy.signal import find_peaks
 from piec.analysis.utilities import *
 
-def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift=True):
+def process_raw_arb_pulse(path:str, show_plots=False, save_plots=False, auto_timeshift=True):
     metadata, raw_df = standard_csv_to_metadata_and_data(path)
     processed_df = raw_df
 
@@ -15,14 +15,20 @@ def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift
     reset_amp = metadata['reset_amp'].values[0]
     reset_width = metadata['reset_width'].values[0]
     reset_delay = metadata['reset_delay'].values[0]
-    p_u_amp = metadata['p_u_amp'].values[0]
-    p_u_width = metadata['p_u_width'].values[0]
-    p_u_delay = metadata['p_u_delay'].values[0]
+    pulse_amp = metadata['pulse_amp'].values[0]
+    pulse_width = metadata['pulse_width'].values[0]
+    pulse_delay = metadata['pulse_delay'].values[0]
+    pulse_sequence = metadata['pulse_sequence'].values[0]
+    n_cycles = metadata['n_cycles'].values[0]
+    sequence_delay = metadata['sequence_delay'].values[0]
+    #p_u_amp = metadata['p_u_amp'].values[0]
+    #p_u_width = metadata['p_u_width'].values[0]
+    #p_u_delay = metadata['p_u_delay'].values[0]
     timestep = processed_df['time (s)'].values[-1]/len(processed_df)
     area = metadata['area'].values[0]
     length = metadata['length'].values[0]
     time_offset = metadata['time_offset'].values[0]
-    polarity = np.sign(p_u_amp) #palarity of the waveform
+    polarity = np.sign(pulse_amp) #palarity of the waveform
 
     # add on time-dependent processed arrays
     processed_df['current (A)'] = processed_df['voltage (V)']/50/area*100 # 50Ohm conversion, area correction, C/m^2 to uC/cm^2
@@ -32,7 +38,7 @@ def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift
 
     if auto_timeshift:
         threshold = np.std(processed_df[processed_df['time (s)'] < reset_width+reset_delay]['voltage (V)'].values*polarity)*0.3 # peak threshold is 30% of the RC discharge of the reset pulse
-        distance = min([reset_delay, p_u_delay+p_u_width])/timestep*0.9 # peaks should never be closer than the minimum distance betweeen pulses
+        distance = min([reset_delay, pulse_delay+pulse_width])/timestep*0.9 # peaks should never be closer than the minimum distance betweeen pulses
         peaks, _ = find_peaks(-polarity*processed_df['voltage (V)'], height=threshold, distance=distance)
         try:
             first_peak = peaks[0]
@@ -51,11 +57,11 @@ def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift
 
     # time to choppy chop the pund based on the extracted pulse widths and delays
     n_ph = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay)
-    n_phr = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+p_u_width)
-    n_ps = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+p_u_width+p_u_delay)
-    n_psr = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+2*p_u_width+p_u_delay)
+    n_phr = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+pulse_width)
+    n_ps = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+pulse_width+pulse_delay)
+    n_psr = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+2*pulse_width+pulse_delay)
     try:
-        n_end = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+2*p_u_width+2*p_u_delay)
+        n_end = np.searchsorted(processed_df['time (s)'].values, reset_width+reset_delay+2*pulse_width+2*pulse_delay)
     except:
         n_end = len(processed_df)
 
@@ -72,26 +78,54 @@ def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift
 
     dp = np.concatenate([ph, phr]) - np.concatenate([ps, psr]) # time dependent FE polarization is diff between p and u pulse polarizations
     array_dict = {'P^':ph, 'P*':ps, 'P^r':phr, 'P*r':psr, 'dP':dp} # this naming convention mimics the one set by Radiant
-    
+
+    '''
     for key in array_dict.keys():
+        print(key)
+        print(ph)
         array_dict[key] -= array_dict[key][0] # zero polarizations
         repeat_values = np.zeros(len(processed_df)-len(array_dict[key]))+array_dict[key][-1]
         array_dict[key] = np.concatenate([array_dict[key], repeat_values]) # add repeat values to the end of arrays so they can be added to the dataframe
         processed_df[key+' (uC/cm^2)'] = array_dict[key] # add analysys arrays to dataframe
-    
+    '''
     # create applied voltage array from nominal assumptions
-    times = [0, reset_width, reset_delay, p_u_width, p_u_delay, p_u_width, p_u_delay,]
+    times = [0, reset_width, reset_delay]
+    for n in range(n_cycles):
+        for i in range(pulse_sequence):
+            times.append(pulse_width)
+            times.append(pulse_delay)
+        times.append(sequence_delay)
     sum_times = [sum(times[:i+1]) for i, t in enumerate(times)]
+        
+    #times = [0, reset_width, reset_delay, pulse_width, pulse_delay, pulse_width, pulse_delay,]
+    #sum_times = [sum(times[:i+1]) for i, t in enumerate(times)]
     # calculate full amplitude of pulse profile and fractional amps of pulses
-    amplitude = abs(reset_amp) + abs(p_u_amp)
+    
+    amplitude = abs(reset_amp) + abs(pulse_amp)
     frac_reset_amp = reset_amp/amplitude
-    frac_p_u_amp = p_u_amp/amplitude
-
+    frac_pulse_amp = pulse_amp/amplitude
     # specify sparse t and v coordinates which define PUND pulse train
-    sparse_t = np.array([sum_times[0], sum_times[1], sum_times[1], sum_times[2], sum_times[2], sum_times[3], sum_times[3],
-                            sum_times[4], sum_times[4], sum_times[5], sum_times[5], sum_times[6],])
-    sparse_v = np.array([-frac_reset_amp, -frac_reset_amp, 0, 0, frac_p_u_amp, frac_p_u_amp, 0, 0,
-                            frac_p_u_amp, frac_p_u_amp, 0, 0,]) * polarity
+    #sparse_t = np.array([sum_times[0], sum_times[1], sum_times[1], sum_times[2], sum_times[2], sum_times[3], sum_times[3],
+    #                        sum_times[4], sum_times[4], sum_times[5], sum_times[5], sum_times[6],])
+    sparse_t_list = [sum_times[0]]
+    for time_index in range(1, (len(sum_times)-1)):
+        sparse_t_list.append(sum_times[time_index])
+        sparse_t_list.append(sum_times[time_index])
+    sparse_t_list.append(sum_times[(len(sum_times))-1])
+    sparse_t = np.array(sparse_t_list)
+
+    sparse_v_list = [-frac_reset_amp, -frac_reset_amp, 0, 0]
+    for n in range(n_cycles):
+        for i in range(pulse_sequence):
+            sparse_v_list.append(frac_pulse_amp*pulse_sequence)
+            sparse_v_list.append(frac_pulse_amp*pulse_sequence)
+            sparse_v_list.append(0)
+            sparse_v_list.append(0)
+        sparse_v_list.append(0)
+        sparse_v_list.append(0)
+    sparse_v = np.array(sparse_v_list)
+    #sparse_v = np.array([-frac_reset_amp, -frac_reset_amp, 0, 0, frac_p_u_amp, frac_p_u_amp, 0, 0,
+    #                        frac_p_u_amp, frac_p_u_amp, 0, 0,]) * polarity
     
     n_points = int(length/timestep) # n points to use is max
 
@@ -109,9 +143,9 @@ def process_raw_3pp(path:str, show_plots=False, save_plots=False, auto_timeshift
 
     # optional plotting
     if show_plots:
-        processed_df.plot(x='time (s)', y='dP (uC/cm^2)', xlim=(0,p_u_width))
-        if save_plots:
-            plt.savefig(path[:-4]+'_dPvst.png')
+        #processed_df.plot(x='time (s)', y='dP (uC/cm^2)', xlim=(0,pulse_width))
+        #if save_plots:
+        #    plt.savefig(path[:-4]+'_dPvst.png')
         processed_df.plot(x='time (s)', y=['applied voltage (V)', 'current (A)',], secondary_y=['current (A)',])
         if save_plots:
             plt.savefig(path[:-4]+'_trace.png')

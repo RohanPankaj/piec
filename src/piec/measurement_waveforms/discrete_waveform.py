@@ -134,6 +134,97 @@ class HysteresisLoop(DiscreteWaveform):
 
         self.awg.create_arb_wf(dense)
         self.awg.configure_wf(self.voltage_channel, 'VOLATILE', voltage=f'{abs(self.amplitude)*2}', frequency=f'{self.frequency}', invert=invert) 
+class ArbitraryPulse(DiscreteWaveform):
+    type = "ARBITRARY_PULSE"
+
+    def __init__(self, awg=None, osc=None, v_div = 0.1,
+                 reset_amp=1, reset_width=1e-3, reset_delay=1e-3, 
+                 pulse_amp=1, pulse_width=1e-3, pulse_delay=1e-3, pulse_sequence = [1],  
+                 n_cycles=1, sequence_delay=1e-3, 
+                 offset=0, voltage_channel:str='1', area=1e-5, time_offset=1e-8):
+        """
+        Initializes the ThreePulsePund class.
+        
+        :param reset_amp: amplitude of reset pulse, polarity is polarity of P and u pulses x(-1) (in Volts)
+        :param reset_width: width of reset pulse (in s)
+        :param reset_delay: delay between reset pulse and p pulse (in s)
+        :param p_u_amp: amplitude of p and u pulses (in Volts)
+        :param p_u_width: width of p and u pulses (in s)
+        :param p_u_delay: delay between p pulse and u pulse (in s)
+        :param offset: Offset of the PUND waveform (in Volts)
+        """
+        super().__init__(awg, osc, v_div, voltage_channel)
+        self.reset_amp = reset_amp
+        self.reset_width = reset_width
+        self.reset_delay = reset_delay
+        self.pulse_amp = pulse_amp
+        self.pulse_width = pulse_width
+        self.pulse_delay = pulse_delay
+        self.pulse_sequence = pulse_sequence
+        self.n_cycles = n_cycles
+        self.sequence_dealy = sequence_delay
+        self.offset = offset
+        self.length = (reset_width+(reset_delay)+((pulse_width+pulse_delay)*len(pulse_sequence)*n_cycles))
+        self.metadata = pd.DataFrame(locals(), index=[0])
+        del self.metadata['self']
+        self.metadata['type'] = self.type
+        self.metadata['awg'] = self.awg.idn()
+        self.metadata['osc'] = self.osc.idn()
+        self.metadata['length'] = self.length
+        self.metadata['timestamp'] = time.time()
+        self.metadata['processed'] = False
+
+    def configure_awg(self):
+        """
+        Configures the Arbitrary Waveform Generator (AWG) to output a triangle wave.
+        """
+        # calculate time steps for voltage trace
+        times = [0, self.reset_width, self.reset_delay]
+        for n in range(self.n_cycles):
+            for i in range(len(self.pulse_sequence)):
+                times.append(self.pulse_width)
+                times.append(self.pulse_delay)
+            times.append(self.sequence_dealy)
+
+        sum_times = [sum(times[:i+1]) for i, t in enumerate(times)]
+        # calculate full amplitude of pulse profile and fractional amps of pulses
+        amplitude = abs(self.reset_amp) + abs(self.pulse_amp)
+        frac_reset_amp = self.reset_amp/amplitude
+        frac_pulse_amp = self.pulse_amp/amplitude
+        
+        #polarity = np.sign(self.pulse_amp)
+
+        # specify sparse t and v coordinates which define PUND pulse train
+        sparse_t_list = [sum_times[0]]
+        for time_index in range(1, (len(sum_times)-1)):
+            sparse_t_list.append(sum_times[time_index])
+            sparse_t_list.append(sum_times[time_index])
+        sparse_t_list.append(sum_times[(len(sum_times))-1])
+        sparse_t = np.array(sparse_t_list)
+
+        #sparse_t = np.array([sum_times[0], sum_times[1], sum_times[1], sum_times[2], sum_times[2], sum_times[3], sum_times[3],
+        #                        sum_times[4], sum_times[4], sum_times[5], sum_times[5], sum_times[6],])
+        sparse_v_list = [-frac_reset_amp, -frac_reset_amp, 0, 0]
+        for n in range(self.n_cycles):
+            for i in range(len(self.pulse_sequence)):
+                sparse_v_list.append(frac_pulse_amp*self.pulse_sequence[i])
+                sparse_v_list.append(frac_pulse_amp*self.pulse_sequence[i])
+                sparse_v_list.append(0)
+                sparse_v_list.append(0)
+            sparse_v_list.append(0)
+            sparse_v_list.append(0)
+        sparse_v = np.array(sparse_v_list)
+        #sparse_v = np.array([ frac_p_u_amp, frac_p_u_amp, 0, 0,
+        #                     frac_pulse_amp, frac_pulse_amp, 0, 0,]) * polarity
+        
+        n_points = self.awg.arb_wf_points_range[1] # n points to use is max
+
+        # densify the array, rise/fall times of pulses will be equal to the awg resolution
+        dense_v = interpolate_sparse_to_dense(sparse_t, sparse_v, total_points=n_points)
+        # write to awg
+        self.awg.create_arb_wf(dense_v)
+        self.awg.configure_wf(self.voltage_channel, 'VOLATILE', voltage=f'{abs(amplitude)}', frequency=f'{1/self.length}')
+        print("AWG configured for a Arb pulse.")
 
 class ThreePulsePund(DiscreteWaveform):
 
