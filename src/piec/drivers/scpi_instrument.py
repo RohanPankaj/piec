@@ -219,7 +219,7 @@ class SCPI_Instrument(Instrument, metaclass=AutoCheckMeta):
             if input_value is None:
                 continue #skips checking for placeholder values
             if type(attribute_value) == tuple:
-                if not is_value_between(input_value, attribute_value): #will error need to make key values correct
+                if (not is_value_between(input_value, attribute_value)) and not self.virtual: #will error need to make key values correct
                     exit_with_error("Error input value of \033[1m{}\033[0m for arg \033[1m{}\033[0m is out of acceptable Range \033[1m{}\033[0m".format(input_value, key, attribute_value))
             if type(attribute_value) == list:
                 if not is_contained(input_value, attribute_value): #checks if the input value is in the allowed list

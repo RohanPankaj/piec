@@ -2,6 +2,8 @@ import numpy as np
 import time
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.optimize import fsolve
+
 from piec.analysis.utilities import *
 from piec.analysis.pund import *
 from piec.analysis.hysteresis import *
@@ -210,7 +212,7 @@ class HysteresisLoop(DiscreteWaveform):
     def __init__(self, awg=None, osc=None, v_div=0.1, frequency=1000.0, amplitude=1.0, offset=0.0,
                  n_cycles=2, voltage_channel:str='1', area=1.0e-5, time_offset=1e-8,
                  show_plots=False, save_plots=True, auto_timeshift=False,
-                 save_dir=r'\\scratch'):
+                 save_dir=r'\\scratch', material_dict=None, temperature=300):
         """
         Initialize hysteresis measurement parameters.
 
@@ -236,6 +238,8 @@ class HysteresisLoop(DiscreteWaveform):
         self.show_plots = show_plots
         self.save_plots = save_plots
         self.auto_timeshift = auto_timeshift
+        self.material_dict = material_dict
+        self.temperature = temperature
         super().__init__(awg, osc, v_div, voltage_channel, save_dir)
 
     def _update_notes(self):
@@ -275,8 +279,114 @@ class HysteresisLoop(DiscreteWaveform):
 
         invert = self.amplitude < 0 # Check if we want opposite polarity
 
+        self.V_applied_path = dense * self.amplitude + self.offset  # Apply amplitude and offset
+
         self.awg.create_arb_wf(dense)
         self.awg.configure_wf(self.voltage_channel, 'USER', voltage=f'{abs(self.amplitude)*2}', offset=f'{self.offset}', frequency=f'{self.frequency}', invert=invert) 
+    def _run_landau_hysteresis_simulation(self):
+          # This function is the same as the previous response that traces the loop.
+        # It calculates and returns V_applied_path and P_loop (the ideal ferroelectric loop).
+        epsilon_0 = 8.854e-12 # F/m, vacuum permittivity
+
+         
+        print(max(self.V_applied_path))
+        fe = self.material_dict['ferroelectric']
+        sub = self.material_dict['substrate']
+        elec = self.material_dict['electrode']
+
+        film_thickness = fe['film_thickness']
+      
+        eta_m = (sub['lattice_a'] - fe['lattice_a']) / fe['lattice_a']
+        a_strain_term = -4 * fe['Q12'] * eta_m / (fe['s11'] + fe['s12'])
+        a_depol_term = elec['screening_lambda'] / (epsilon_0 * elec['permittivity_e'] * film_thickness)
+        a_tilde = fe['a0'] * (self.temperature - fe['T0']) + a_strain_term + a_depol_term
+        b_tilde = fe['b'] + (4 * fe['Q12']**2) / (fe['s11'] + fe['s12'])
+        c_tilde = fe['c']
+        def landau_voltage_function(P_val):
+            return (a_tilde * P_val + b_tilde * P_val**3 + c_tilde * P_val**5) * film_thickness
+        def equation_to_solve(P_val, V_target):
+            return landau_voltage_function(P_val) - V_target
+        coeffs_for_P_squared = [5 * c_tilde, 3 * b_tilde, a_tilde]
+        roots_P_squared = np.roots(coeffs_for_P_squared)
+        P_switching_points = [np.sqrt(np.real(r_P2)) for r_P2 in roots_P_squared if np.isreal(r_P2) and r_P2 > 0]
+        V_switching = sorted([landau_voltage_function(p_sw) for p_sw in P_switching_points])
+        V_c_negative, V_c_positive = -V_switching[0], V_switching[0]
+        
+        P_loop = np.zeros_like(self.V_applied_path)
+        P_current = fsolve(equation_to_solve, x0=-0.5, args=(self.V_applied_path[0]))[0]
+        P_loop[0] = P_current
+        on_upper_branch = (P_current > 0)
+        for i in range(1, len(self.V_applied_path)):
+            V_target = self.V_applied_path[i]
+            V_previous = self.V_applied_path[i-1]
+            sweeping_up = (V_target > V_previous)
+            initial_guess_P = P_current
+            if sweeping_up and not on_upper_branch and V_target >= V_c_positive:
+                initial_guess_P = 0.5; on_upper_branch = True
+            elif not sweeping_up and on_upper_branch and V_target <= V_c_negative:
+                initial_guess_P = -0.5; on_upper_branch = False
+            P_solution = fsolve(equation_to_solve, x0=initial_guess_P, args=(V_target))
+            P_current = P_solution[0]
+            P_loop[i] = P_current
+        return P_loop
+    def _simulate_parasitic_effects(self, P_ideal_loop):
+        """
+        Adds both linear dielectric and ohmic leakage effects to an ideal P-V loop.
+        """
+        epsilon_0 = 8.854e-12 # F/m, vacuum permittivity
+      
+
+        fe = self.material_dict['ferroelectric']
+        # --- Part 1: Linear Dielectric Contribution (Causes Tilt) ---
+        # P_dielectric = epsilon_0 * (epsilon_r - 1) * E = epsilon_0 * (epsilon_r - 1) * V / d
+        P_dielectric = epsilon_0 * (fe['epsilon_r'] - 1) * self.V_applied_path / fe['film_thickness']
+        
+        # --- Part 2: Leakage Contribution (Causes Rounding/Fattening) ---
+        num_points = len(self.V_applied_path)
+        period = 1.0 / self.frequency
+        delta_t = period / num_points
+        leakage_integral_term = np.cumsum(self.V_applied_path) * delta_t
+        P_leak_loop = (1 / (self.area * fe['leakage_resistance'])) * leakage_integral_term
+
+        # --- Part 3: Total Measured Polarization ---
+        P_total_loop = P_ideal_loop + P_dielectric + P_leak_loop
+        
+        return P_total_loop, P_dielectric + P_ideal_loop
+    def run_experiment(self):
+        print(self.awg.virtual)
+        if self.awg.virtual: 
+            self.configure_oscilloscope()
+            self.initialize_awg()
+            self.configure_awg()
+
+      
+            
+            
+            P_ideal = self._run_landau_hysteresis_simulation()
+            P_total, P_tilted = self._simulate_parasitic_effects(P_ideal)
+     
+            if self.show_plots or self.save_plots:
+                plt.figure(figsize=(12, 8))
+                plt.plot(self.V_applied_path, P_ideal, 'b--', linewidth=2.0,  label='Ideal Ferroelectric Loop ($P_{FE}$)')
+                plt.plot(self.V_applied_path, P_tilted, 'g:', linewidth=2.5, label='Tilted Loop ($P_{FE} + P_{dielectric}$)')
+                plt.plot(self.V_applied_path, P_total, 'r-', linewidth=2.5, label='Total Measured Loop ($P_{FE} + P_{dielectric} + P_{leak}$)', markersize=100)
+            
+                plt.axhline(0, color='black', linewidth=0.5)
+                plt.axvline(0, color='black', linewidth=0.5)
+                plt.title(f'Separating Effects on P-V Hysteresis')
+                plt.xlabel('Applied Voltage, V (Volts)')
+                plt.ylabel('Total Measured Polarization, P (C/m$^2$)')
+                plt.legend()
+                plt.grid(True)
+                plt.show()
+
+                if self.save_plots:
+                    plt.savefig(super().save_dir[:-4]+'_trace.png')
+            self._update_history()
+
+        else:
+            super().run_experiment() 
+
 
 class ThreePulsePund(DiscreteWaveform):
     """
