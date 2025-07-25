@@ -57,15 +57,14 @@ class VirtualAwg(VirtualInstrument, Awg, Scpi):
         self.write('*TRG')
     def write(self, command):
         if command == '*TRG':
-            print(77777777777777777777777777777777)
-            print(self.state['acquisition_channel'])
+            
             v = self.get_waveform(self.state['acquisition_channel'])
-            print("max of v in write: ", np.max(v))
+            
             freq = self.state['frequency'][self.state['acquisition_channel']]
             duration = 1.0 / freq  # one period
             t = np.linspace(0, duration, len(v))
             print("Applying waveform to virtual sample...")
-            print("Waveform length:", len(v), "Time vector length:", len(t))
+           
             self.sample.apply_waveform(v, t)
         else: 
             pass
@@ -152,7 +151,7 @@ class VirtualAwg(VirtualInstrument, Awg, Scpi):
         min_dac, max_dac = self.arb_dac_value
         voltage_data = []
         for val in scaled_dac_data:
-            #print("val in create arb waveform: ", val)
+            
             voltage_data.append(( (2 * (val - min_dac)) / (max_dac - min_dac) ) - 1)
         self.state['arb_waveform'][channel] = np.array(voltage_data)
 
@@ -216,10 +215,7 @@ class VirtualAwg(VirtualInstrument, Awg, Scpi):
         elif wf == 'USER' and self.state['arb_waveform'][channel] is not None:
             
             data = self.state['arb_waveform'][channel]
-            print(self.arb_data_length)
-            print(len(data))
-            print("data used for creati g v in get_wf", data)
-            print("amplitude at v creation", self.state['amplitude'][channel])
+            
             v = np.interp(np.linspace(0, len(data)-1, self.arb_data_length[1]), np.arange(len(data)), data)
         else:
             v = np.zeros(self.arb_data_length)

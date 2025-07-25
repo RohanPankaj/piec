@@ -135,7 +135,7 @@ class DiscreteWaveform:
         print(f"Capturing waveform of type {self.mtype} for {self.length} seconds...")
         self.osc.arm()
         self.awg.output(channel=int(self.voltage_channel), on=True)
-        print(self.voltage_channel)
+        
         self.awg.instrument.write('*TRG') # New driver lacks a direct method, send SCPI command
         
         # New driver lacks a blocking operation complete query.
@@ -145,8 +145,7 @@ class DiscreteWaveform:
         self.osc.set_acquisition_channel(channel=1) # Setup waveform source
         
         # New driver returns a structured DataFrame
-        print("About to query the scope")
-        print("id of the scope", self.osc.idn())
+    
         df = self.osc.get_data()
         self.data = pd.DataFrame({"time (s)": df['Time'], "voltage (V)": df['Voltage']}) # Store data
         print("Waveform captured.")
@@ -280,16 +279,15 @@ class HysteresisLoop(DiscreteWaveform):
         n_points = self.awg.arb_data_length[1] # Use attribute for max points
         dense = interpolate_sparse_to_dense(np.linspace(0,len(interp_v_array),len(interp_v_array)), interp_v_array, total_points=n_points)
         
-        #print("dense in src configure_awg: ", dense)
-        print("dense max: ", np.max(dense))
+        
         # Scale normalized data to AWG's DAC values (0-16383)
         min_dac, max_dac = self.awg.arb_dac_value
         scaled_dense = [int((val + 1) / 2 * (max_dac - min_dac) + min_dac) for val in dense]
 
-        #print('scaled_dense in src configure_awg: ', scaled_dense)
+        
         # Create the arbitrary waveform in the AWG's volatile memory
         self.awg.create_arb_waveform(channel=int(self.voltage_channel), name="VOLATILE", data=scaled_dense)
-        print( "scaled_dense max: ", np.max(scaled_dense))
+        
         # Configure the AWG output using the specific methods
         invert = self.amplitude < 0
         polarity = "INV" if invert else "NORM"

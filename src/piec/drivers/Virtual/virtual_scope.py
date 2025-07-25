@@ -34,7 +34,7 @@ class VirtualScope(VirtualInstrument, Oscilloscope, Scpi):
 
     def __init__(self):
         VirtualInstrument.__init__(self, address=None)
-        print(VirtualInstrument._shared_sample.name)
+        
         self.state = {
             'channels_on': {ch: True for ch in self.channel},
             'vdiv': {ch: 1.0 for ch in self.channel},
@@ -125,12 +125,10 @@ class VirtualScope(VirtualInstrument, Oscilloscope, Scpi):
 
     def get_data(self):
 
-        print("in get data of virtual scope")
+        
         voltages, times = self.sample.get_voltage_response()
         
-        print("here are the voltages: ", voltages)
-        #print(voltages)
-    
+        
         return pd.DataFrame({'Time': times, 'Voltage': voltages})
 
     def arm(self):

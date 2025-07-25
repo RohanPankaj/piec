@@ -142,89 +142,7 @@ class Ferroelectric(Material):
         P_total_loop = P_ideal_loop + P_dielectric + P_leak_loop
         
         return P_total_loop, P_dielectric + P_ideal_loop
-    '''
-    def run_landau_hysteresis_simulation(self, V_applied_path):
-        # This function is the same as the previous response that traces the loop.
-        # It calculates and returns V_applied_path and P_loop (the ideal ferroelectric loop).
-        import matplotlib.pyplot as plt
-        #plt.plot(np.arange(len(V_applied_path)), V_applied_path)
-        EPSILON_0 = 8.854e-12 # F/m, vacuum permittivity 
-
-        fe = self.material_dict['ferroelectric']
-        sub = self.material_dict['substrate']
-        elec = self.material_dict['electrode']
-
-        film_thickness = fe['film_thickness']
-        #V_applied_peak = V_pp / 2.0
-        eta_m = (sub['lattice_a'] - fe['lattice_a']) / fe['lattice_a']
-        a_strain_term = -4 * fe['Q12'] * eta_m / (fe['s11'] + fe['s12'])
-        a_depol_term = elec['screening_lambda'] / (EPSILON_0 * elec['permittivity_e'] * film_thickness)
-        a_tilde = fe['a0'] * (self.temperature - fe['T0']) + a_strain_term + a_depol_term
-        b_tilde = fe['b'] + (4 * fe['Q12']**2) / (fe['s11'] + fe['s12'])
-        c_tilde = fe['c']
-        def landau_voltage_function(P_val):
-            return (a_tilde * P_val + b_tilde * P_val**3 + c_tilde * P_val**5) * film_thickness
-        def equation_to_solve(P_val, V_target):
-            return landau_voltage_function(P_val) - V_target
-        coeffs_for_P_squared = [5 * c_tilde, 3 * b_tilde, a_tilde]
-        roots_P_squared = np.roots(coeffs_for_P_squared)
-        P_switching_points = [np.sqrt(np.real(r_P2)) for r_P2 in roots_P_squared if np.isreal(r_P2) and r_P2 > 0]
-        V_switching = sorted([landau_voltage_function(p_sw) for p_sw in P_switching_points])
-        V_c_negative, V_c_positive = -V_switching[0], V_switching[0] # Simplified for this example
-        #up_ramp = np.linspace(-V_applied_peak, V_applied_peak, num_steps_per_ramp)
-        #V_applied_path = np.concatenate([up_ramp, down_ramp])
-        P_loop = np.zeros_like(V_applied_path)
-        P_current = fsolve(equation_to_solve, x0=-0.5, args=(V_applied_path[0]))[0]
-        P_loop[0] = P_current
-        on_upper_branch = (P_current > 0)
-        print("Length of V_applied_path to virtualSample: ", len(V_applied_path))
-        for i in range(1, len(V_applied_path)):
-            V_target = V_applied_path[i]
-            V_previous = V_applied_path[i-1]
-            sweeping_up = (V_target > V_previous)
-            initial_guess_P = P_current
-            if sweeping_up and not on_upper_branch and V_target >= V_c_positive:
-                initial_guess_P = 0.01; on_upper_branch = True
-            elif not sweeping_up and on_upper_branch and V_target <= V_c_negative:
-                initial_guess_P = -0.01; on_upper_branch = False
-            P_solution = fsolve(equation_to_solve, x0=initial_guess_P, args=(V_target))
-            P_current = P_solution[0]
-            P_loop[i] = P_current
-        import matplotlib.pyplot as plt
-        print("P_loop: ", P_loop)
-        data_index = np.arange(len(V_applied_path))
-        plt.plot(V_applied_path, P_loop, linewidth=2.0,)
-        
-
-        return P_loop
-
-    def add_parasitic_effects(self, V_applied_path, t, P_ideal_loop):
-        """
-        Adds both linear dielectric and ohmic leakage effects to an ideal P-V loop.
-        """ 
-        EPSILON_0 = 8.854e-12 # F/m, vacuum permittivity 
-        epsilon_r = self.material_dict['ferroelectric']['epsilon_r']
-        film_thickness = self.material_dict['ferroelectric']['film_thickness']
-        area = self.material_dict['electrode']['area']
-        R_leak = self.material_dict['ferroelectric']['leakage_resistance']
-
-        # --- Part 1: Linear Dielectric Contribution (Causes Tilt) ---
-        # P_dielectric = epsilon_0 * (epsilon_r - 1) * E = epsilon_0 * (epsilon_r - 1) * V / d
-        P_dielectric = EPSILON_0 * (epsilon_r - 1) * V_applied_path / film_thickness
-        
-        # --- Part 2: Leakage Contribution (Causes Rounding/Fattening) ---
-        delta_t = t[1]-t[0]
-        leakage_integral_term = np.cumsum(V_applied_path) * delta_t
-        P_leak_loop = (1 / (area * R_leak)) * leakage_integral_term
-
-        # --- Part 3: Total Measured Polarization ---
-        P_total_loop = P_ideal_loop + P_dielectric + P_leak_loop
-        import matplotlib.pyplot as plt
-        print('peak of v_applied_path: ', np.max(V_applied_path))
-        #plt.plot(t, V_applied_path)
-        #plt.plot(V_applied_path, P_total_loop)
-        return P_total_loop
-        '''
+   
     def apply_waveform(self, v, t):
         """
         Applies a voltage waveform to the ferroelectric material and returns the response.
@@ -236,7 +154,7 @@ class Ferroelectric(Material):
         # Placeholder for actual ferroelectric response logic
         # For now, just return the voltage and time arrays
         self.t = t
-        print("max of voltage fed into model: ", np.max(v))
+        
         import matplotlib.pyplot as plt
         
         p_ideal = self.run_landau_hysteresis_simulation(v)
