@@ -11,6 +11,8 @@ from piec.measurement_waveforms.discrete_waveform import HysteresisLoop, ThreePu
 from piec.analysis.utilities import standard_csv_to_metadata_and_data
 from piec.drivers.Keysight.k_81150a import Keysight81150a
 from piec.drivers.Keysight.k_dsox3024a import KeysightDSOX3024a
+from piec.drivers.Virtual.virtual_awg import VirtualAwg
+from piec.drivers.Virtual.virtual_scope import VirtualScope
 
 DEFAULTS = {"awg_address":"VIRTUAL",
             "osc_address":"VIRTUAL",
@@ -263,8 +265,12 @@ class MeasurementApp:
         osc_address = self.osc_address_entry.get()
         save_dir = self.save_dir_entry.get()
         measurement_type = self.measurement_type.get()
-        awg = Keysight81150a(awg_address)
-        osc = Dsox3024a(osc_address)
+        if awg_address != "VIRTUAL":
+            awg = Keysight81150a(awg_address)
+        else: awg = VirtualAwg()
+        if osc_address != "VIRTUAL":
+            osc = KeysightDSOX3024a(osc_address)
+        else: osc = VirtualScope()
         v_div = float(self.vdiv_entry.get())
         area = float(eval(str(self.area_entry.get())))
         time_offset = float(self.timeshift_entry.get())*1.0e-9

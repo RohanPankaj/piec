@@ -47,6 +47,8 @@ def process_raw_hyst(path:str, show_plots=False, save_plots=False, auto_timeshif
     # create applied voltage array from nominal assumptions
     interp_v_array = np.array([0,1,0,-1,0]+([1,0,-1,0]*(N-1)))*amp
     v_applied = interpolate_sparse_to_dense(np.linspace(0,len(interp_v_array),len(interp_v_array)), interp_v_array, total_points=int(length//timestep))
+    print("time offset line 50 of hysteresis.py", time_offset)
+    print("timestep line 50 of hysteresis.py", timestep)
     initial_delay = np.zeros(int(time_offset//timestep))
     v_applied = np.concatenate([initial_delay, v_applied])
 

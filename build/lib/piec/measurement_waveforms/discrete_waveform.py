@@ -272,7 +272,7 @@ class HysteresisLoop(DiscreteWaveform):
                 break
 
         invert = self.amplitude < 0 # Check if we want opposite polarity
-
+        print("dense used for creating waveform: ", dense)
         self.awg.create_arb_wf(dense)
         self.awg.configure_wf(self.voltage_channel, 'USER', voltage=f'{abs(self.amplitude)*2}', offset=f'{self.offset}', frequency=f'{self.frequency}', invert=invert) 
 
